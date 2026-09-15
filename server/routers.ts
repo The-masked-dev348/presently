@@ -253,7 +253,9 @@ export const appRouter = router({
       const db = await requireDb();
       const referrer = await db.select({ id: users.id }).from(users).where(eq(users.referralCode, input.code.toUpperCase())).limit(1);
       if (!referrer[0]) throw new TRPCError({ code: "NOT_FOUND", message: "That referral link is no longer active." });
-      ctx.res.cookie(REFERRAL_COOKIE, input.code.toUpperCase(), { maxAge: 1000 * 60 * 60 * 24 * 7, httpOnly: true, sameSite: "lax", secure: true, path: "/" });
+      const forwardedProto = ctx.req.headers["x-forwarded-proto"];
+      const secure = ctx.req.protocol === "https" || (typeof forwardedProto === "string" && forwardedProto.split(",")[0]?.trim() === "https");
+      ctx.res.cookie(REFERRAL_COOKIE, input.code.toUpperCase(), { maxAge: 1000 * 60 * 60 * 24 * 7, httpOnly: true, sameSite: "lax", secure, path: "/" });
       return { tracked: true } as const;
     }),
     claim: protectedProcedure.input(z.object({ code: z.string().min(3).max(32) })).mutation(async ({ ctx, input }) => {
