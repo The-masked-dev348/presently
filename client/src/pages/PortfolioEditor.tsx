@@ -67,7 +67,20 @@ export default function PortfolioEditor() {
   const handleUpload = async (file: File | undefined, category: "profile_image" | "resume") => {
     if (!file) return;
     setUploading(category);
-    try { const result = await uploadFile.mutateAsync({ originalName: file.name, mimeType: file.type, dataBase64: await fileToBase64(file), category }); await saveProfile.mutateAsync(category === "profile_image" ? { profileImageFileId: result.id } : { resumeFileId: result.id }); if (category === "profile_image") setProfileImageUrl(result.url); await utils.portfolio.mine.invalidate(); toast.success(category === "profile_image" ? "Profile photo uploaded" : "Resume uploaded"); } catch (error) { toast.error(error instanceof Error ? error.message : "Upload failed"); } finally { setUploading(null); }
+    try {
+      const dataUrl = await fileToBase64(file);
+      // Show the selected image immediately in the live preview. The permanent
+      // storage URL is still saved below and will hydrate again after reload.
+      if (category === "profile_image") setProfileImageUrl(dataUrl);
+      const result = await uploadFile.mutateAsync({ originalName: file.name, mimeType: file.type, dataBase64: dataUrl, category });
+      await saveProfile.mutateAsync(category === "profile_image" ? { profileImageFileId: result.id } : { resumeFileId: result.id });
+      await utils.portfolio.mine.invalidate();
+      toast.success(category === "profile_image" ? "Profile photo uploaded" : "Resume uploaded");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      setUploading(null);
+    }
   };
   const resetProject = () => { setProject(emptyProject); setEditingProjectId(null); };
   const saveProject = async () => { if (!project.title.trim()) return toast.error("Give this project a title first"); const payload = { title: project.title, description: project.description, technologies: project.technologies.split(",").map(item => item.trim()).filter(Boolean), liveUrl: project.liveUrl, githubUrl: project.githubUrl }; try { if (editingProjectId) await updateProject.mutateAsync({ id: editingProjectId, data: payload }); else await createProject.mutateAsync(payload); await utils.projects.list.invalidate(); await utils.portfolio.mine.invalidate(); resetProject(); toast.success(editingProjectId ? "Project updated" : "Project added"); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save project"); } };
