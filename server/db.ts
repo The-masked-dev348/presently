@@ -96,6 +96,13 @@ export async function getFilesByUserId(userId: number) {
   return db.select().from(files).where(eq(files.userId, userId)).orderBy(desc(files.createdAt));
 }
 
+export async function getFileOwnerId(fileId: number): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select({ userId: files.userId }).from(files).where(eq(files.id, fileId)).limit(1);
+  return result[0]?.userId;
+}
+
 export async function getPortfolioBundleByUserId(userId: number) {
   const portfolio = await getPortfolioByUserId(userId);
   if (!portfolio) return null;
@@ -103,7 +110,11 @@ export async function getPortfolioBundleByUserId(userId: number) {
     getProjectsByPortfolioId(portfolio.id),
     getFilesByUserId(userId),
   ]);
-  return { portfolio, projects: projectRows, files: fileRows };
+  // fileRows is already scoped to this user's own files (getFilesByUserId
+  // filters on userId), so a lookup here can never resolve another user's
+  // file even if profileImageFileId were ever set to a foreign id.
+  const profileImageUrl = fileRows.find(file => file.id === portfolio.profileImageFileId)?.fileUrl ?? null;
+  return { portfolio, projects: projectRows, files: fileRows, profileImageUrl };
 }
 
 export async function getPublicPortfolioBundle(slug: string) {
@@ -114,7 +125,21 @@ export async function getPublicPortfolioBundle(slug: string) {
     getProjectsByPortfolioId(portfolio.id),
   ]);
   if (!owner || owner.suspended) return null;
-  return { portfolio, projects: projectRows, owner };
+  let profileImageUrl: string | null = null;
+  if (portfolio.profileImageFileId) {
+    const db = await getDb();
+    if (db) {
+      // Constrained to files.userId === portfolio.userId so a visitor can
+      // only ever be served the image the portfolio's own owner uploaded.
+      const match = await db
+        .select({ fileUrl: files.fileUrl })
+        .from(files)
+        .where(and(eq(files.id, portfolio.profileImageFileId), eq(files.userId, portfolio.userId)))
+        .limit(1);
+      profileImageUrl = match[0]?.fileUrl ?? null;
+    }
+  }
+  return { portfolio, projects: projectRows, owner, profileImageUrl };
 }
 
 export async function getActiveTemplates() {

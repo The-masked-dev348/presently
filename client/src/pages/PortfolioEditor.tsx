@@ -55,7 +55,7 @@ export default function PortfolioEditor() {
     if (code) claimReferral.mutate({ code }, { onSuccess: () => localStorage.removeItem("presently-referral-code") });
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const preview = useMemo<PreviewPortfolio>(() => ({ fullName: profile.fullName, professionalTitle: profile.professionalTitle, bio: profile.bio, location: profile.location, skills: profile.skills, templateId: profile.templateId, socialLinks: { website: profile.website, github: profile.github, linkedin: profile.linkedin, twitter: profile.twitter }, projects: (projectsQuery.data ?? []).map(item => ({ id: item.id, title: item.title, description: item.description, technologies: item.technologies, liveUrl: item.liveUrl, githubUrl: item.githubUrl })) }), [profile, projectsQuery.data]);
+  const preview = useMemo<PreviewPortfolio>(() => ({ fullName: profile.fullName, professionalTitle: profile.professionalTitle, bio: profile.bio, location: profile.location, skills: profile.skills, templateId: profile.templateId, socialLinks: { website: profile.website, github: profile.github, linkedin: profile.linkedin, twitter: profile.twitter }, profileImageUrl: portfolioQuery.data?.profileImageUrl ?? null, projects: (projectsQuery.data ?? []).map(item => ({ id: item.id, title: item.title, description: item.description, technologies: item.technologies, liveUrl: item.liveUrl, githubUrl: item.githubUrl })) }), [profile, projectsQuery.data, portfolioQuery.data?.profileImageUrl]);
 
   const save = async () => {
     setSaving(true);
