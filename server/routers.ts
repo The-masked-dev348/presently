@@ -245,7 +245,7 @@ export const appRouter = router({
       }
       const stored = await storagePut(`${ctx.user.id}/presently/${input.originalName}`, buffer, input.mimeType);
       const db = await requireDb();
-      const result = await db.insert(files).values({
+      const [insertedFile] = await db.insert(files).values({
         userId: ctx.user.id,
         originalName: input.originalName,
         storageKey: stored.key,
@@ -253,8 +253,11 @@ export const appRouter = router({
         mimeType: input.mimeType,
         fileSize: buffer.byteLength,
         category: input.category,
-      });
-      return { id: Number((result as unknown as { insertId: number }).insertId), ...stored, originalName: input.originalName, category: input.category };
+      }).$returningId();
+      if (!insertedFile?.id) {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Upload was stored but its file record could not be identified." });
+      }
+      return { id: insertedFile.id, ...stored, originalName: input.originalName, category: input.category };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       const db = await requireDb();
