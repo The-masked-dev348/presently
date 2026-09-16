@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { isAllowedUpload, isMeaningfulReferralAction, slugify } from "../shared/presently";
+import { isAllowedUpload, isMeaningfulReferralAction, isOwnedFileId, slugify } from "../shared/presently";
 import type { TrpcContext } from "./_core/context";
 
 const publicContext: TrpcContext = {
@@ -25,6 +25,14 @@ describe("Presently product rules", () => {
   it("creates safe readable public slugs", () => {
     expect(slugify("  Alex Morgan — Product Designer ")).toBe("alex-morgan-product-designer");
     expect(slugify("!!!")).toBe("portfolio");
+  });
+
+  it("only treats a file id as owned when its recorded owner matches the requester", () => {
+    expect(isOwnedFileId(42, 7, 7)).toBe(true);
+    expect(isOwnedFileId(42, 9, 7)).toBe(false);
+    expect(isOwnedFileId(42, undefined, 7)).toBe(false);
+    expect(isOwnedFileId(null, undefined, 7)).toBe(true);
+    expect(isOwnedFileId(undefined, undefined, 7)).toBe(true);
   });
 
   it("does not expose an unpublished portfolio through the public procedure", async () => {
