@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { isAllowedUpload, isMeaningfulReferralAction, isOwnedFileId, slugify } from "../shared/presently";
+import { isAllowedProjectMedia, isAllowedUpload, isMeaningfulReferralAction, isOwnedFileId, slugify } from "../shared/presently";
 import type { TrpcContext } from "./_core/context";
 
 const publicContext: TrpcContext = {
@@ -20,6 +20,13 @@ describe("Presently product rules", () => {
     expect(isAllowedUpload("image/jpeg", 10 * 1024 * 1024)).toBe(true);
     expect(isAllowedUpload("application/zip", 500)).toBe(false);
     expect(isAllowedUpload("application/pdf", 10 * 1024 * 1024 + 1)).toBe(false);
+  });
+
+  it("accepts portfolio project images and videos within the media limit", () => {
+    expect(isAllowedProjectMedia("image/webp", 1000)).toBe(true);
+    expect(isAllowedProjectMedia("video/mp4", 50 * 1024 * 1024)).toBe(true);
+    expect(isAllowedProjectMedia("video/avi", 1000)).toBe(false);
+    expect(isAllowedProjectMedia("video/mp4", 50 * 1024 * 1024 + 1)).toBe(false);
   });
 
   it("creates safe readable public slugs", () => {

@@ -3,9 +3,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import PortfolioPreview, { type PreviewPortfolio } from "@/components/PortfolioPreview";
+import PortfolioPreview, { type PreviewMedia, type PreviewPortfolio } from "@/components/PortfolioPreview";
 import { trpc } from "@/lib/trpc";
-import { TEMPLATE_OPTIONS, type TemplateSlug } from "@shared/presently";
+import { ALLOWED_PROJECT_MEDIA, MAX_PROJECT_MEDIA_BYTES, TEMPLATE_OPTIONS, type TemplateSlug } from "@shared/presently";
 import { ArrowLeft, Check, ExternalLink, FileUp, Loader2, LogOut, Plus, Save, Send, Trash2, Upload, WandSparkles } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -15,6 +15,16 @@ const emptyProfile = { fullName: "", professionalTitle: "", bio: "", location: "
 const emptyProject = { title: "", description: "", technologies: "", liveUrl: "", githubUrl: "" };
 
 function fileToBase64(file: File) { return new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); }); }
+
+function ProjectMediaControls({ projectId, media, onUpload, onDelete }: { projectId: number; media: PreviewMedia[]; onUpload: (file: File | undefined) => void; onDelete: (mediaId: number) => void }) {
+  return <div className="mt-4 rounded-2xl border border-[#dedcd2] bg-[#f8f5ed] p-3">
+    <div className="flex items-center justify-between gap-3">
+      <div><p className="text-xs font-bold uppercase tracking-[.14em] text-[#e98d55]">Project gallery</p><p className="mt-1 text-xs text-[#6f786f]">Show clients the work, process, and result.</p></div>
+      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-[#e4f18e] px-3 py-2 text-xs font-bold text-[#21473a] hover:bg-[#d9e889]"><Upload className="h-3.5 w-3.5" />Add media<input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime" className="hidden" onChange={event => { onUpload(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>
+    </div>
+    {media.length > 0 && <div className="mt-3 grid grid-cols-2 gap-2">{media.map(item => <div key={item.id ?? item.url} className="group relative overflow-hidden rounded-xl border border-[#dedcd2] bg-white">{item.mediaType === "video" ? <video src={item.url} controls preload="metadata" className="aspect-video w-full object-cover" /> : <img src={item.url} alt={item.caption || item.originalName || "Project media"} className="aspect-video w-full object-cover" />}<button type="button" onClick={() => item.id !== undefined && onDelete(item.id)} className="absolute right-1.5 top-1.5 rounded-full bg-white/90 px-2 py-1 text-[10px] font-bold text-[#b83f3f] opacity-0 shadow transition group-hover:opacity-100">Remove</button></div>)}</div>}
+  </div>;
+}
 
 export default function PortfolioEditor() {
   const { user, loading, logout } = useAuth({ redirectOnUnauthenticated: true });
@@ -26,6 +36,7 @@ export default function PortfolioEditor() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<"profile_image" | "resume" | null>(null);
   const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
+  const [projectMediaPreviews, setProjectMediaPreviews] = useState<Record<number, PreviewMedia[]>>({});
   const profileInput = useRef<HTMLInputElement>(null);
   const resumeInput = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
@@ -38,6 +49,8 @@ export default function PortfolioEditor() {
   const updateProject = trpc.projects.update.useMutation();
   const deleteProject = trpc.projects.delete.useMutation();
   const uploadFile = trpc.files.upload.useMutation();
+  const uploadProjectMedia = trpc.projectMedia.upload.useMutation();
+  const deleteProjectMedia = trpc.projectMedia.delete.useMutation();
   const claimReferral = trpc.referrals.claim.useMutation();
   const [hasHydrated, setHasHydrated] = useState(false);
 
@@ -57,7 +70,21 @@ export default function PortfolioEditor() {
     if (code) claimReferral.mutate({ code }, { onSuccess: () => localStorage.removeItem("presently-referral-code") });
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const preview = useMemo<PreviewPortfolio>(() => ({ fullName: profile.fullName, professionalTitle: profile.professionalTitle, bio: profile.bio, location: profile.location, skills: profile.skills, templateId: profile.templateId, socialLinks: { website: profile.website, github: profile.github, linkedin: profile.linkedin, twitter: profile.twitter }, profileImageUrl, projects: (projectsQuery.data ?? []).map(item => ({ id: item.id, title: item.title, description: item.description, technologies: item.technologies, liveUrl: item.liveUrl, githubUrl: item.githubUrl })) }), [profile, projectsQuery.data, profileImageUrl]);
+  const preview = useMemo<PreviewPortfolio>(() => ({
+    fullName: profile.fullName,
+    professionalTitle: profile.professionalTitle,
+    bio: profile.bio,
+    location: profile.location,
+    skills: profile.skills,
+    templateId: profile.templateId,
+    socialLinks: { website: profile.website, github: profile.github, linkedin: profile.linkedin, twitter: profile.twitter },
+    profileImageUrl,
+    projects: (projectsQuery.data ?? []).map(item => {
+      const localMedia = projectMediaPreviews[item.id] ?? [];
+      const localIds = new Set(localMedia.map(media => media.id));
+      return { id: item.id, title: item.title, description: item.description, technologies: item.technologies, liveUrl: item.liveUrl, githubUrl: item.githubUrl, media: [...localMedia, ...(item.media ?? []).filter(media => !localIds.has(media.id))] };
+    }),
+  }), [profile, projectsQuery.data, profileImageUrl, projectMediaPreviews]);
 
   const save = async () => {
     setSaving(true);
@@ -82,6 +109,38 @@ export default function PortfolioEditor() {
       setUploading(null);
     }
   };
+  const handleProjectMediaUpload = async (projectId: number, file: File | undefined) => {
+    if (!file) return;
+    if (!(ALLOWED_PROJECT_MEDIA as readonly string[]).includes(file.type)) return toast.error("Use JPG, PNG, WebP, MP4, WebM, or MOV files.");
+    if (file.size > MAX_PROJECT_MEDIA_BYTES) return toast.error("Project media must be 50 MB or smaller.");
+    try {
+      const dataUrl = await fileToBase64(file);
+      const mediaType = file.type.startsWith("video/") ? "video" as const : "image" as const;
+      const localMedia: PreviewMedia = { id: -Date.now(), mediaType, url: dataUrl, originalName: file.name };
+      setProjectMediaPreviews(current => ({ ...current, [projectId]: [...(current[projectId] ?? []), localMedia] }));
+      const result = await uploadProjectMedia.mutateAsync({ projectId, originalName: file.name, mimeType: file.type, dataBase64: dataUrl });
+      setProjectMediaPreviews(current => ({ ...current, [projectId]: (current[projectId] ?? []).map(item => item.id === localMedia.id ? { ...item, id: result.id } : item) }));
+      await utils.projects.list.invalidate();
+      toast.success("Project media uploaded");
+    } catch (error) {
+      setProjectMediaPreviews(current => ({ ...current, [projectId]: (current[projectId] ?? []).filter(item => item.id !== undefined && item.id >= 0) }));
+      toast.error(error instanceof Error ? error.message : "Could not upload project media");
+    }
+  };
+  const handleProjectMediaDelete = async (projectId: number, mediaId: number) => {
+    if (mediaId < 0) {
+      setProjectMediaPreviews(current => ({ ...current, [projectId]: (current[projectId] ?? []).filter(item => item.id !== mediaId) }));
+      return;
+    }
+    try {
+      await deleteProjectMedia.mutateAsync({ id: mediaId });
+      setProjectMediaPreviews(current => ({ ...current, [projectId]: (current[projectId] ?? []).filter(item => item.id !== mediaId) }));
+      await utils.projects.list.invalidate();
+      toast.success("Project media removed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not remove project media");
+    }
+  };
   const resetProject = () => { setProject(emptyProject); setEditingProjectId(null); };
   const saveProject = async () => { if (!project.title.trim()) return toast.error("Give this project a title first"); const payload = { title: project.title, description: project.description, technologies: project.technologies.split(",").map(item => item.trim()).filter(Boolean), liveUrl: project.liveUrl, githubUrl: project.githubUrl }; try { if (editingProjectId) await updateProject.mutateAsync({ id: editingProjectId, data: payload }); else await createProject.mutateAsync(payload); await utils.projects.list.invalidate(); await utils.portfolio.mine.invalidate(); resetProject(); toast.success(editingProjectId ? "Project updated" : "Project added"); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save project"); } };
   const startEdit = (item: NonNullable<typeof projectsQuery.data>[number]) => { setEditingProjectId(item.id); setProject({ title: item.title, description: item.description || "", technologies: item.technologies || "", liveUrl: item.liveUrl || "", githubUrl: item.githubUrl || "" }); setActiveTab("work"); };
@@ -93,7 +152,7 @@ export default function PortfolioEditor() {
     <main className="container py-8"><div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-[#e98d55]">Make it yours</p><h1 className="display-font mt-2 text-4xl font-bold tracking-[-.06em] text-[#21473a]">Your portfolio, in progress.</h1><p className="mt-2 text-sm text-[#6f786f]">Save as you go. Publish when it feels like you.</p></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1.5 text-xs font-bold ${isPublished ? "bg-[#dcefdc] text-[#21473a]" : "bg-[#ebe8dc] text-[#6f786f]"}`}>{isPublished ? "Live to the world" : "Private draft"}</span><Button onClick={publishPortfolio} disabled={publish.isPending || saving} className="rounded-full bg-[#21473a] px-5 text-[#f8f5ed] hover:bg-[#2f5c4b]">{publish.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{isPublished ? "Unpublish" : "Publish"}</Button></div></div>
       <div className="grid gap-8 xl:grid-cols-[minmax(0,.92fr)_minmax(420px,1.08fr)]"><section><div className="mb-4 flex gap-1 rounded-2xl bg-[#ebe8dc] p-1"><button onClick={() => setActiveTab("profile")} className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${activeTab === "profile" ? "bg-white text-[#21473a] shadow-sm" : "text-[#6f786f]"}`}>Profile</button><button onClick={() => setActiveTab("work")} className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${activeTab === "work" ? "bg-white text-[#21473a] shadow-sm" : "text-[#6f786f]"}`}>Work</button><button onClick={() => setActiveTab("appearance")} className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${activeTab === "appearance" ? "bg-white text-[#21473a] shadow-sm" : "text-[#6f786f]"}`}>Appearance</button></div>
         {activeTab === "profile" && <Card className="border-[#dedcd2] bg-white/70 shadow-none"><CardHeader><CardTitle className="display-font text-xl text-[#21473a]">The essentials</CardTitle><CardDescription>Start with the details people need to understand your work.</CardDescription></CardHeader><CardContent className="space-y-5"><div className="grid gap-4 sm:grid-cols-2"><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>Full name</span><Input value={profile.fullName} onChange={e => setProfile({ ...profile, fullName: e.target.value })} placeholder="Alex Morgan" /></label><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>Professional title</span><Input value={profile.professionalTitle} onChange={e => setProfile({ ...profile, professionalTitle: e.target.value })} placeholder="Product designer" /></label></div><div className="grid gap-4 sm:grid-cols-2"><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>Location</span><Input value={profile.location} onChange={e => setProfile({ ...profile, location: e.target.value })} placeholder="Lagos, Nigeria" /></label><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>Skills <span className="font-normal text-[#6f786f]">(comma separated)</span></span><Input value={profile.skills} onChange={e => setProfile({ ...profile, skills: e.target.value })} placeholder="React, Figma, Strategy" /></label></div><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>Short bio</span><Textarea rows={5} value={profile.bio} onChange={e => setProfile({ ...profile, bio: e.target.value })} placeholder="What do you make, and why does it matter?" /></label><div className="grid gap-4 sm:grid-cols-2"><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>Website</span><Input value={profile.website} onChange={e => setProfile({ ...profile, website: e.target.value })} placeholder="https://yourname.com" /></label><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>GitHub</span><Input value={profile.github} onChange={e => setProfile({ ...profile, github: e.target.value })} placeholder="https://github.com/you" /></label><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>LinkedIn</span><Input value={profile.linkedin} onChange={e => setProfile({ ...profile, linkedin: e.target.value })} placeholder="https://linkedin.com/in/you" /></label><label className="space-y-2 text-sm font-semibold text-[#385046]"><span>Twitter / X</span><Input value={profile.twitter} onChange={e => setProfile({ ...profile, twitter: e.target.value })} placeholder="https://x.com/you" /></label></div><div className="flex flex-wrap gap-3 border-t border-[#dedcd2] pt-5"><input ref={profileInput} type="file" accept="image/png,image/jpeg" className="hidden" onChange={e => handleUpload(e.target.files?.[0], "profile_image")} /><Button variant="outline" onClick={() => profileInput.current?.click()} disabled={uploading === "profile_image"} className="gap-2 rounded-full"><Upload className="h-4 w-4" />{uploading === "profile_image" ? "Uploading…" : "Add profile photo"}</Button><input ref={resumeInput} type="file" accept="application/pdf,image/png,image/jpeg" className="hidden" onChange={e => handleUpload(e.target.files?.[0], "resume")} /><Button variant="outline" onClick={() => resumeInput.current?.click()} disabled={uploading === "resume"} className="gap-2 rounded-full"><FileUp className="h-4 w-4" />{uploading === "resume" ? "Uploading…" : "Upload resume"}</Button><Button onClick={save} disabled={saving} className="ml-auto gap-2 rounded-full bg-[#21473a] text-white hover:bg-[#2f5c4b]"><Save className="h-4 w-4" />{saving ? "Saving…" : "Save profile"}</Button></div></CardContent></Card>}
-        {activeTab === "work" && <Card className="border-[#dedcd2] bg-white/70 shadow-none"><CardHeader><CardTitle className="display-font text-xl text-[#21473a]">Selected work</CardTitle><CardDescription>Add the projects that make your story credible.</CardDescription></CardHeader><CardContent className="space-y-6"><div className="rounded-2xl border border-[#dedcd2] bg-[#f8f5ed] p-5"><div className="mb-4 flex items-center justify-between"><p className="text-sm font-bold text-[#21473a]">{editingProjectId ? "Edit project" : "New project"}</p>{editingProjectId && <button onClick={resetProject} className="text-xs font-semibold text-[#6f786f]">Cancel</button>}</div><div className="space-y-4"><Input value={project.title} onChange={e => setProject({ ...project, title: e.target.value })} placeholder="Project title" /><Textarea rows={3} value={project.description} onChange={e => setProject({ ...project, description: e.target.value })} placeholder="What was the challenge, and what did you make?" /><Input value={project.technologies} onChange={e => setProject({ ...project, technologies: e.target.value })} placeholder="Technologies (comma separated)" /><div className="grid gap-4 sm:grid-cols-2"><Input value={project.liveUrl} onChange={e => setProject({ ...project, liveUrl: e.target.value })} placeholder="Live URL" /><Input value={project.githubUrl} onChange={e => setProject({ ...project, githubUrl: e.target.value })} placeholder="GitHub URL" /></div><Button onClick={saveProject} disabled={createProject.isPending || updateProject.isPending} className="rounded-full bg-[#21473a] text-white hover:bg-[#2f5c4b]"><Plus className="h-4 w-4" />{editingProjectId ? "Update project" : "Add project"}</Button></div></div><div className="space-y-3">{(projectsQuery.data ?? []).map(item => <div key={item.id} className="flex items-start justify-between gap-4 rounded-2xl border border-[#dedcd2] bg-white p-4"><div><p className="font-semibold text-[#21473a]">{item.title}</p><p className="mt-1 line-clamp-2 text-sm leading-6 text-[#6f786f]">{item.description || "No description yet."}</p><p className="mt-2 text-xs text-[#e98d55]">{item.technologies || "Add technologies"}</p></div><div className="flex gap-1"><button onClick={() => startEdit(item)} className="rounded-lg px-2 py-1 text-xs font-semibold text-[#21473a] hover:bg-[#ebe8dc]">Edit</button><button onClick={() => deleteProject.mutate({ id: item.id }, { onSuccess: () => { utils.projects.list.invalidate(); toast.success("Project removed"); } })} className="rounded-lg p-2 text-[#6f786f] hover:bg-[#f9e4de] hover:text-[#b83f3f]" aria-label={`Delete ${item.title}`}><Trash2 className="h-4 w-4" /></button></div></div>)}{!projectsQuery.data?.length && <div className="rounded-2xl border border-dashed border-[#dedcd2] p-6 text-center text-sm text-[#6f786f]">Your projects will collect here. Start with the work you're proudest of.</div>}</div></CardContent></Card>}
+        {activeTab === "work" && <Card className="border-[#dedcd2] bg-white/70 shadow-none"><CardHeader><CardTitle className="display-font text-xl text-[#21473a]">Selected work</CardTitle><CardDescription>Add the projects that make your story credible.</CardDescription></CardHeader><CardContent className="space-y-6"><div className="rounded-2xl border border-[#dedcd2] bg-[#f8f5ed] p-5"><div className="mb-4 flex items-center justify-between"><p className="text-sm font-bold text-[#21473a]">{editingProjectId ? "Edit project" : "New project"}</p>{editingProjectId && <button onClick={resetProject} className="text-xs font-semibold text-[#6f786f]">Cancel</button>}</div><div className="space-y-4"><Input value={project.title} onChange={e => setProject({ ...project, title: e.target.value })} placeholder="Project title" /><Textarea rows={3} value={project.description} onChange={e => setProject({ ...project, description: e.target.value })} placeholder="What was the challenge, and what did you make?" /><Input value={project.technologies} onChange={e => setProject({ ...project, technologies: e.target.value })} placeholder="Technologies (comma separated)" /><div className="grid gap-4 sm:grid-cols-2"><Input value={project.liveUrl} onChange={e => setProject({ ...project, liveUrl: e.target.value })} placeholder="Live URL" /><Input value={project.githubUrl} onChange={e => setProject({ ...project, githubUrl: e.target.value })} placeholder="GitHub URL" /></div><Button onClick={saveProject} disabled={createProject.isPending || updateProject.isPending} className="rounded-full bg-[#21473a] text-white hover:bg-[#2f5c4b]"><Plus className="h-4 w-4" />{editingProjectId ? "Update project" : "Add project"}</Button></div></div><div className="space-y-3">{(projectsQuery.data ?? []).map(item => <div key={item.id} className="flex items-start justify-between gap-4 rounded-2xl border border-[#dedcd2] bg-white p-4"><div><p className="font-semibold text-[#21473a]">{item.title}</p><p className="mt-1 line-clamp-2 text-sm leading-6 text-[#6f786f]">{item.description || "No description yet."}</p><p className="mt-2 text-xs text-[#e98d55]">{item.technologies || "Add technologies"}</p><ProjectMediaControls projectId={item.id} media={projectMediaPreviews[item.id] ?? item.media ?? []} onUpload={file => handleProjectMediaUpload(item.id, file)} onDelete={mediaId => handleProjectMediaDelete(item.id, mediaId)} /></div><div className="flex gap-1"><button onClick={() => startEdit(item)} className="rounded-lg px-2 py-1 text-xs font-semibold text-[#21473a] hover:bg-[#ebe8dc]">Edit</button><button onClick={() => deleteProject.mutate({ id: item.id }, { onSuccess: () => { utils.projects.list.invalidate(); toast.success("Project removed"); } })} className="rounded-lg p-2 text-[#6f786f] hover:bg-[#f9e4de] hover:text-[#b83f3f]" aria-label={`Delete ${item.title}`}><Trash2 className="h-4 w-4" /></button></div></div>)}{!projectsQuery.data?.length && <div className="rounded-2xl border border-dashed border-[#dedcd2] p-6 text-center text-sm text-[#6f786f]">Your projects will collect here. Start with the work you're proudest of.</div>}</div></CardContent></Card>}
         {activeTab === "appearance" && <Card className="border-[#dedcd2] bg-white/70 shadow-none"><CardHeader><CardTitle className="display-font text-xl text-[#21473a]">Choose a direction</CardTitle><CardDescription>Switch templates without losing any of your content.</CardDescription></CardHeader><CardContent><div className="grid gap-3">{(templatesQuery.data ?? TEMPLATE_OPTIONS).map(template => <button key={template.slug} onClick={() => setProfile({ ...profile, templateId: template.slug as TemplateSlug })} className={`flex items-center justify-between rounded-2xl border p-4 text-left ${profile.templateId === template.slug ? "border-[#21473a] bg-[#eef4e9] ring-2 ring-[#dcefdc]" : "border-[#dedcd2] bg-white hover:border-[#a9b8ab]"}`}><span><span className="block font-semibold text-[#21473a]">{template.name}</span><span className="mt-1 block text-sm text-[#6f786f]">{"description" in template ? template.description : "A focused visual direction for your story."}</span></span>{profile.templateId === template.slug && <Check className="h-5 w-5 text-[#21473a]" />}</button>)}<Button onClick={save} disabled={saving} className="mt-3 w-full gap-2 rounded-full bg-[#21473a] text-white hover:bg-[#2f5c4b]"><Save className="h-4 w-4" />Save appearance</Button></div></CardContent></Card>}
       </section><aside className="xl:sticky xl:top-8 xl:self-start"><div className="mb-3 flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-[.2em] text-[#e98d55]">Live preview</p><p className="mt-1 text-sm text-[#6f786f]">This is what your visitors will see.</p></div><WandSparkles className="h-5 w-5 text-[#e98d55]" /></div><PortfolioPreview portfolio={preview} /></aside></div>
     </main>

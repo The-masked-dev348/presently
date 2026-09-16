@@ -11,7 +11,9 @@ export type TemplateSlug = (typeof TEMPLATE_OPTIONS)[number]["slug"];
 export const REFERRAL_COOKIE = "presently_referral";
 export const REFERRAL_REWARD_KOBO = 10000;
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
-export const ALLOWED_UPLOADS = ["application/pdf", "image/jpeg", "image/png"] as const;
+export const MAX_PROJECT_MEDIA_BYTES = 50 * 1024 * 1024;
+export const ALLOWED_UPLOADS = ["application/pdf", "image/jpeg", "image/png", "image/webp"] as const;
+export const ALLOWED_PROJECT_MEDIA = ["image/jpeg", "image/png", "image/webp", "video/mp4", "video/webm", "video/quicktime"] as const;
 
 export function slugify(value: string) {
   return value
@@ -29,6 +31,10 @@ export function makeReferralCode(name: string) {
 
 export function isAllowedUpload(mimeType: string, size: number) {
   return (ALLOWED_UPLOADS as readonly string[]).includes(mimeType) && size <= MAX_UPLOAD_BYTES;
+}
+
+export function isAllowedProjectMedia(mimeType: string, size: number) {
+  return (ALLOWED_PROJECT_MEDIA as readonly string[]).includes(mimeType) && size <= MAX_PROJECT_MEDIA_BYTES;
 }
 
 export function isMeaningfulReferralAction(published: boolean) {

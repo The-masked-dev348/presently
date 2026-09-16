@@ -1,9 +1,10 @@
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
   files,
   portfolios,
+  projectMedia,
   projects,
   referrals,
   rewards,
@@ -90,6 +91,45 @@ export async function getProjectsByPortfolioId(portfolioId: number) {
   return db.select().from(projects).where(eq(projects.portfolioId, portfolioId)).orderBy(asc(projects.sortOrder), desc(projects.createdAt));
 }
 
+type ProjectMediaBundleItem = {
+  id: number;
+  projectId: number;
+  mediaType: "image" | "video";
+  caption: string | null;
+  sortOrder: number;
+  url: string;
+  mimeType: string;
+  originalName: string;
+};
+
+async function attachProjectMedia(projectRows: Awaited<ReturnType<typeof getProjectsByPortfolioId>>, userId: number) {
+  if (!projectRows.length) return projectRows.map(project => ({ ...project, media: [] as ProjectMediaBundleItem[] }));
+  const db = await getDb();
+  if (!db) return projectRows.map(project => ({ ...project, media: [] as ProjectMediaBundleItem[] }));
+  const mediaRows = await db
+    .select({
+      id: projectMedia.id,
+      projectId: projectMedia.projectId,
+      mediaType: projectMedia.mediaType,
+      caption: projectMedia.caption,
+      sortOrder: projectMedia.sortOrder,
+      url: files.fileUrl,
+      mimeType: files.mimeType,
+      originalName: files.originalName,
+    })
+    .from(projectMedia)
+    .innerJoin(files, eq(projectMedia.fileId, files.id))
+    .where(and(inArray(projectMedia.projectId, projectRows.map(project => project.id)), eq(projectMedia.userId, userId)))
+    .orderBy(asc(projectMedia.sortOrder), asc(projectMedia.createdAt));
+  const byProject = new Map<number, ProjectMediaBundleItem[]>();
+  for (const media of mediaRows) {
+    const current = byProject.get(media.projectId) ?? [];
+    current.push(media);
+    byProject.set(media.projectId, current);
+  }
+  return projectRows.map(project => ({ ...project, media: byProject.get(project.id) ?? [] }));
+}
+
 export async function getFilesByUserId(userId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -114,7 +154,7 @@ export async function getPortfolioBundleByUserId(userId: number) {
   // filters on userId), so a lookup here can never resolve another user's
   // file even if profileImageFileId were ever set to a foreign id.
   const profileImageUrl = fileRows.find(file => file.id === portfolio.profileImageFileId)?.fileUrl ?? null;
-  return { portfolio, projects: projectRows, files: fileRows, profileImageUrl };
+  return { portfolio, projects: await attachProjectMedia(projectRows, userId), files: fileRows, profileImageUrl };
 }
 
 export async function getPublicPortfolioBundle(slug: string) {
@@ -139,7 +179,7 @@ export async function getPublicPortfolioBundle(slug: string) {
       profileImageUrl = match[0]?.fileUrl ?? null;
     }
   }
-  return { portfolio, projects: projectRows, owner, profileImageUrl };
+  return { portfolio, projects: await attachProjectMedia(projectRows, portfolio.userId), owner, profileImageUrl };
 }
 
 export async function getActiveTemplates() {

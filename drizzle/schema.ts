@@ -88,6 +88,24 @@ export const projects = mysqlTable(
   (table) => ({ portfolioIdx: index("projects_portfolio_idx").on(table.portfolioId) }),
 );
 
+export const projectMedia = mysqlTable(
+  "projectMedia",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    projectId: int("projectId").notNull(),
+    userId: int("userId").notNull(),
+    fileId: int("fileId").notNull(),
+    mediaType: mysqlEnum("mediaType", ["image", "video"]).notNull(),
+    caption: varchar("caption", { length: 240 }),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({
+    projectIdx: index("project_media_project_idx").on(table.projectId),
+    userIdx: index("project_media_user_idx").on(table.userId),
+  }),
+);
+
 export const files = mysqlTable(
   "files",
   {
@@ -99,7 +117,7 @@ export const files = mysqlTable(
     fileUrl: varchar("fileUrl", { length: 600 }).notNull(),
     mimeType: varchar("mimeType", { length: 120 }).notNull(),
     fileSize: int("fileSize").notNull(),
-    category: mysqlEnum("category", ["resume", "project_image", "profile_image", "certificate", "other"]).default("other").notNull(),
+    category: mysqlEnum("category", ["resume", "project_image", "project_media", "profile_image", "certificate", "other"]).default("other").notNull(),
     createdAt: timestamp("createdAt").defaultNow().notNull(),
   },
   (table) => ({ userIdx: index("files_user_idx").on(table.userId) }),

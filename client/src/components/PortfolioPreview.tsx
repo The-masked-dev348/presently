@@ -9,6 +9,15 @@ export type PreviewProject = {
   liveUrl?: string | null;
   githubUrl?: string | null;
   imageUrl?: string | null;
+  media?: PreviewMedia[];
+};
+
+export type PreviewMedia = {
+  id?: number;
+  mediaType: "image" | "video";
+  url: string;
+  caption?: string | null;
+  originalName?: string | null;
 };
 
 export type PreviewPortfolio = {
@@ -25,6 +34,15 @@ export type PreviewPortfolio = {
 
 function chips(value?: string | null) {
   return (value ?? "").split(",").map(item => item.trim()).filter(Boolean);
+}
+
+function ProjectMedia({ media = [] }: { media?: PreviewMedia[] }) {
+  if (!media.length) return null;
+  return <div className="mt-4 grid gap-2 sm:grid-cols-2">
+    {media.slice(0, 4).map(item => item.mediaType === "video"
+      ? <video key={item.id ?? item.url} src={item.url} controls preload="metadata" className="aspect-video w-full rounded-xl bg-[#19231f] object-cover" aria-label={item.caption || item.originalName || "Project video"} />
+      : <img key={item.id ?? item.url} src={item.url} alt={item.caption || item.originalName || "Project image"} className="aspect-video w-full rounded-xl bg-[#eeeade] object-cover" />)}
+  </div>;
 }
 
 function Identity({ portfolio, dark = false }: { portfolio: PreviewPortfolio; dark?: boolean }) {
@@ -69,7 +87,7 @@ export default function PortfolioPreview({ portfolio }: { portfolio: PreviewPort
 }
 
 function ProjectRow({ project, dark = false }: { project: PreviewProject; dark?: boolean }) {
-  return <div className={`group rounded-2xl border p-4 transition hover:-translate-y-0.5 ${dark ? "border-white/10 bg-white/[.04] hover:bg-white/[.08]" : "border-[#dedcd2] bg-white/50 hover:border-[#e98d55]"}`}><div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">{project.title}</h3><p className={`mt-1 text-sm leading-6 ${dark ? "text-white/55" : "text-[#6f786f]"}`}>{project.description || "A short description of the work."}</p><div className="mt-3 flex flex-wrap gap-1.5">{chips(project.technologies).slice(0, 4).map(tech => <span key={tech} className={`rounded-full px-2 py-1 text-[10px] ${dark ? "bg-white/10 text-white/60" : "bg-[#eeeade] text-[#6f786f]"}`}>{tech}</span>)}</div></div><ArrowUpRight className={`h-4 w-4 shrink-0 ${dark ? "text-[#a7d66e]" : "text-[#e98d55]"}`} /></div></div>;
+  return <div className={`group rounded-2xl border p-4 transition hover:-translate-y-0.5 ${dark ? "border-white/10 bg-white/[.04] hover:bg-white/[.08]" : "border-[#dedcd2] bg-white/50 hover:border-[#e98d55]"}`}><div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">{project.title}</h3><p className={`mt-1 text-sm leading-6 ${dark ? "text-white/55" : "text-[#6f786f]"}`}>{project.description || "A short description of the work."}</p><div className="mt-3 flex flex-wrap gap-1.5">{chips(project.technologies).slice(0, 4).map(tech => <span key={tech} className={`rounded-full px-2 py-1 text-[10px] ${dark ? "bg-white/10 text-white/60" : "bg-[#eeeade] text-[#6f786f]"}`}>{tech}</span>)}</div><ProjectMedia media={project.media} /></div><ArrowUpRight className={`h-4 w-4 shrink-0 ${dark ? "text-[#a7d66e]" : "text-[#e98d55]"}`} /></div></div>;
 }
-function ProjectCard({ project }: { project: PreviewProject }) { return <div className="rounded-2xl border border-[#dedcd2] p-4"><div className="mb-8 flex h-20 items-end rounded-xl bg-[#eeeade] p-3"><Sparkles className="h-4 w-4 text-[#e98d55]" /></div><h3 className="font-semibold">{project.title}</h3><p className="mt-1 line-clamp-2 text-sm leading-6 text-[#6f786f]">{project.description || "A short description of the work."}</p></div>; }
+function ProjectCard({ project }: { project: PreviewProject }) { return <div className="rounded-2xl border border-[#dedcd2] p-4"><ProjectMedia media={project.media} /><div className="mb-8 flex h-20 items-end rounded-xl bg-[#eeeade] p-3"><Sparkles className="h-4 w-4 text-[#e98d55]" /></div><h3 className="font-semibold">{project.title}</h3><p className="mt-1 line-clamp-2 text-sm leading-6 text-[#6f786f]">{project.description || "A short description of the work."}</p></div>; }
 function EmptyWork({ dark = false }: { dark?: boolean }) { return <div className={`rounded-2xl border border-dashed p-5 text-sm ${dark ? "border-white/15 text-white/45" : "border-[#dedcd2] text-[#6f786f]"}`}>Your selected work will appear here.</div>; }

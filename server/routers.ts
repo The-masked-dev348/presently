@@ -1,11 +1,14 @@
 import { COOKIE_NAME, FOREIGN_FILE_ERR_MSG } from "@shared/const";
 import {
   ALLOWED_UPLOADS,
+  ALLOWED_PROJECT_MEDIA,
   MAX_UPLOAD_BYTES,
+  MAX_PROJECT_MEDIA_BYTES,
   REFERRAL_COOKIE,
   REFERRAL_REWARD_KOBO,
   TEMPLATE_OPTIONS,
   isAllowedUpload,
+  isAllowedProjectMedia,
   isMeaningfulReferralAction,
   isOwnedFileId,
   slugify,
@@ -15,6 +18,7 @@ import { z } from "zod";
 import {
   files,
   portfolios,
+  projectMedia,
   projects,
   referrals,
   rewardAuditLogs,
@@ -81,6 +85,14 @@ async function requireOwnedPortfolio(userId: number, portfolioId?: number) {
     : await getPortfolioByUserId(userId);
   if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Create your portfolio before managing projects." });
   return row;
+}
+
+async function requireOwnedProject(userId: number, projectId: number) {
+  const db = await requireDb();
+  const portfolio = await requireOwnedPortfolio(userId);
+  const row = (await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.portfolioId, portfolio.id))).limit(1))[0];
+  if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found." });
+  return { db, portfolio, project: row };
 }
 
 // Rejects a profileImageFileId/resumeFileId that doesn't belong to the
@@ -194,7 +206,7 @@ export const appRouter = router({
     create: protectedProcedure.input(projectInput).mutation(async ({ ctx, input }) => {
       const db = await requireDb();
       const portfolio = await requireOwnedPortfolio(ctx.user.id);
-      const result = await db.insert(projects).values({
+      const [insertedProject] = await db.insert(projects).values({
         portfolioId: portfolio.id,
         title: input.title,
         description: input.description ?? "",
@@ -203,8 +215,9 @@ export const appRouter = router({
         githubUrl: input.githubUrl ?? "",
         technologies: input.technologies?.filter(Boolean).join(",") ?? "",
         sortOrder: input.sortOrder ?? 0,
-      });
-      return { id: Number((result as unknown as { insertId: number }).insertId) };
+      }).$returningId();
+      if (!insertedProject?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Project could not be identified after creation." });
+      return { id: insertedProject.id };
     }),
     update: protectedProcedure.input(z.object({ id: z.number().int().positive(), data: projectInput })).mutation(async ({ ctx, input }) => {
       const db = await requireDb();
@@ -227,6 +240,55 @@ export const appRouter = router({
       const portfolio = await requireOwnedPortfolio(ctx.user.id);
       await db.delete(projects).where(and(eq(projects.id, input.id), eq(projects.portfolioId, portfolio.id)));
       return { success: true };
+    }),
+  }),
+
+  projectMedia: router({
+    upload: protectedProcedure.input(z.object({
+      projectId: z.number().int().positive(),
+      originalName: z.string().min(1).max(255),
+      mimeType: z.string().refine(type => (ALLOWED_PROJECT_MEDIA as readonly string[]).includes(type), "Use JPG, PNG, WebP, MP4, WebM, or MOV files."),
+      dataBase64: z.string().min(1),
+      caption: z.string().max(240).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { db, portfolio } = await requireOwnedProject(ctx.user.id, input.projectId);
+      const raw = input.dataBase64.includes(",") ? input.dataBase64.split(",").pop() ?? "" : input.dataBase64;
+      const buffer = Buffer.from(raw, "base64");
+      if (!isAllowedProjectMedia(input.mimeType, buffer.byteLength) || buffer.byteLength > MAX_PROJECT_MEDIA_BYTES) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Project media must be JPG, PNG, WebP, MP4, WebM, or MOV and no larger than 50 MB." });
+      }
+      const stored = await storagePut(`${ctx.user.id}/presently/projects/${input.projectId}/${input.originalName}`, buffer, input.mimeType);
+      const [insertedFile] = await db.insert(files).values({
+        userId: ctx.user.id,
+        portfolioId: portfolio.id,
+        originalName: input.originalName,
+        storageKey: stored.key,
+        fileUrl: stored.url,
+        mimeType: input.mimeType,
+        fileSize: buffer.byteLength,
+        category: "project_media",
+      }).$returningId();
+      if (!insertedFile?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Media was stored but its file record could not be identified." });
+      const [insertedMedia] = await db.insert(projectMedia).values({
+        projectId: input.projectId,
+        userId: ctx.user.id,
+        fileId: insertedFile.id,
+        mediaType: input.mimeType.startsWith("video/") ? "video" : "image",
+        caption: input.caption ?? null,
+        sortOrder: 0,
+      }).$returningId();
+      if (!insertedMedia?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Media was stored but its project link could not be identified." });
+      return { id: insertedMedia.id, fileId: insertedFile.id, mediaType: input.mimeType.startsWith("video/") ? "video" as const : "image" as const, url: stored.url, originalName: input.originalName, caption: input.caption ?? null };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const row = (await db.select().from(projectMedia).where(and(eq(projectMedia.id, input.id), eq(projectMedia.userId, ctx.user.id))).limit(1))[0];
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Project media not found." });
+      await db.transaction(async tx => {
+        await tx.delete(projectMedia).where(eq(projectMedia.id, input.id));
+        await tx.delete(files).where(and(eq(files.id, row.fileId), eq(files.userId, ctx.user.id)));
+      });
+      return { success: true } as const;
     }),
   }),
 
