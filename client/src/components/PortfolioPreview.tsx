@@ -1,4 +1,4 @@
-import { ArrowUpRight, MapPin, Sparkles } from "lucide-react";
+import { ArrowUpRight, Github, Globe2, Linkedin, MapPin, Sparkles, Twitter } from "lucide-react";
 import type { TemplateSlug } from "@shared/presently";
 
 export type PreviewProject = {
@@ -63,7 +63,14 @@ function Identity({ portfolio, dark = false }: { portfolio: PreviewPortfolio; da
 function SocialLinks({ portfolio, dark = false }: { portfolio: PreviewPortfolio; dark?: boolean }) {
   const links = Object.entries(portfolio.socialLinks ?? {}).filter(([, value]) => Boolean(value));
   if (!links.length) return null;
-  return <div className="mt-6 flex flex-wrap gap-2">{links.map(([name, value]) => <a key={name} href={value.startsWith("http") ? value : `https://${value}`} target="_blank" rel="noreferrer" className={`rounded-full border px-3 py-1.5 text-xs font-semibold capitalize transition ${dark ? "border-white/15 text-white/70 hover:border-[#a7d66e] hover:text-[#a7d66e]" : "border-[#dedcd2] text-[#385046] hover:border-[#e98d55] hover:text-[#e98d55]"}`}>{name}</a>)}</div>;
+  const iconFor = (name: string) => {
+    const normalized = name.toLowerCase();
+    if (normalized.includes("github")) return Github;
+    if (normalized.includes("linkedin")) return Linkedin;
+    if (normalized.includes("twitter") || normalized === "x") return Twitter;
+    return Globe2;
+  };
+  return <div className="mt-6 flex flex-wrap gap-2">{links.map(([name, value]) => { const Icon = iconFor(name); return <a key={name} href={value.startsWith("http") ? value : `https://${value}`} target="_blank" rel="noreferrer" aria-label={`Open ${name}`} title={name} className={`inline-flex h-9 w-9 items-center justify-center rounded-full border transition ${dark ? "border-white/15 text-white/70 hover:border-[#a7d66e] hover:text-[#a7d66e]" : "border-[#dedcd2] text-[#385046] hover:border-[#e98d55] hover:text-[#e98d55]"}`}><Icon className="h-4 w-4" aria-hidden="true" /><span className="sr-only">{name}</span></a>; })}</div>;
 }
 
 export default function PortfolioPreview({ portfolio }: { portfolio: PreviewPortfolio }) {
