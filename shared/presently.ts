@@ -35,6 +35,20 @@ export function isMeaningfulReferralAction(published: boolean) {
   return published === true;
 }
 
+// A file reference on a portfolio (profileImageFileId / resumeFileId) is only
+// safe to save when either nothing is being changed (null/undefined — see
+// callers for what each means) or the file is actually owned by the user
+// making the request. `ownerUserId` is whatever the files table reports for
+// that id (undefined if the id doesn't exist at all).
+export function isOwnedFileId(
+  fileId: number | null | undefined,
+  ownerUserId: number | null | undefined,
+  requestingUserId: number,
+): boolean {
+  if (fileId === null || fileId === undefined) return true;
+  return ownerUserId === requestingUserId;
+}
+
 export function parseSocialLinks(value: string | null | undefined) {
   if (!value) return {};
   try {

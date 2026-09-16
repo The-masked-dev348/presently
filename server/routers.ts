@@ -1,4 +1,4 @@
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, FOREIGN_FILE_ERR_MSG } from "@shared/const";
 import {
   ALLOWED_UPLOADS,
   MAX_UPLOAD_BYTES,
@@ -7,6 +7,7 @@ import {
   TEMPLATE_OPTIONS,
   isAllowedUpload,
   isMeaningfulReferralAction,
+  isOwnedFileId,
   slugify,
 } from "@shared/presently";
 import { and, asc, desc, eq } from "drizzle-orm";
@@ -25,6 +26,7 @@ import { storagePut } from "./storage";
 import {
   getActiveTemplates,
   getDb,
+  getFileOwnerId,
   getFilesByUserId,
   getPortfolioBundleByUserId,
   getPortfolioByUserId,
@@ -81,6 +83,17 @@ async function requireOwnedPortfolio(userId: number, portfolioId?: number) {
   return row;
 }
 
+// Rejects a profileImageFileId/resumeFileId that doesn't belong to the
+// requesting user. A no-op when the field is null (clearing it) or undefined
+// (left untouched) — see isOwnedFileId for why those are always safe.
+async function assertOwnedFile(fileId: number | null | undefined, userId: number) {
+  if (fileId === null || fileId === undefined) return;
+  const ownerId = await getFileOwnerId(fileId);
+  if (!isOwnedFileId(fileId, ownerId, userId)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: FOREIGN_FILE_ERR_MSG });
+  }
+}
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -102,6 +115,8 @@ export const appRouter = router({
   portfolio: router({
     mine: protectedProcedure.query(({ ctx }) => getPortfolioBundleByUserId(ctx.user.id)),
     save: protectedProcedure.input(portfolioInput).mutation(async ({ ctx, input }) => {
+      await assertOwnedFile(input.profileImageFileId, ctx.user.id);
+      await assertOwnedFile(input.resumeFileId, ctx.user.id);
       const db = await requireDb();
       const existing = await getPortfolioByUserId(ctx.user.id);
       const templateId = input.templateId ?? existing?.templateId ?? "minimal";
