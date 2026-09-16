@@ -25,6 +25,7 @@ export default function PortfolioEditor() {
   const [activeTab, setActiveTab] = useState<"profile" | "work" | "appearance">("profile");
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<"profile_image" | "resume" | null>(null);
+  const [profileImageUrl, setProfileImageUrl] = useState<string | null>(null);
   const profileInput = useRef<HTMLInputElement>(null);
   const resumeInput = useRef<HTMLInputElement>(null);
   const utils = trpc.useUtils();
@@ -46,6 +47,7 @@ export default function PortfolioEditor() {
     let socials: Record<string, string> = {};
     try { socials = JSON.parse(data.socialLinks || "{}"); } catch { /* use empty socials */ }
     setProfile({ fullName: data.fullName || user?.name || "", professionalTitle: data.professionalTitle || "", bio: data.bio || "", location: data.location || "", skills: data.skills || "", website: socials.website || "", github: socials.github || "", linkedin: socials.linkedin || "", twitter: socials.twitter || "", templateId: (data.templateId || "minimal") as TemplateSlug });
+    setProfileImageUrl(portfolioQuery.data?.profileImageUrl ?? null);
     setHasHydrated(true);
   }, [portfolioQuery.data, user?.name, hasHydrated]);
 
@@ -55,7 +57,7 @@ export default function PortfolioEditor() {
     if (code) claimReferral.mutate({ code }, { onSuccess: () => localStorage.removeItem("presently-referral-code") });
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const preview = useMemo<PreviewPortfolio>(() => ({ fullName: profile.fullName, professionalTitle: profile.professionalTitle, bio: profile.bio, location: profile.location, skills: profile.skills, templateId: profile.templateId, socialLinks: { website: profile.website, github: profile.github, linkedin: profile.linkedin, twitter: profile.twitter }, profileImageUrl: portfolioQuery.data?.profileImageUrl ?? null, projects: (projectsQuery.data ?? []).map(item => ({ id: item.id, title: item.title, description: item.description, technologies: item.technologies, liveUrl: item.liveUrl, githubUrl: item.githubUrl })) }), [profile, projectsQuery.data, portfolioQuery.data?.profileImageUrl]);
+  const preview = useMemo<PreviewPortfolio>(() => ({ fullName: profile.fullName, professionalTitle: profile.professionalTitle, bio: profile.bio, location: profile.location, skills: profile.skills, templateId: profile.templateId, socialLinks: { website: profile.website, github: profile.github, linkedin: profile.linkedin, twitter: profile.twitter }, profileImageUrl, projects: (projectsQuery.data ?? []).map(item => ({ id: item.id, title: item.title, description: item.description, technologies: item.technologies, liveUrl: item.liveUrl, githubUrl: item.githubUrl })) }), [profile, projectsQuery.data, profileImageUrl]);
 
   const save = async () => {
     setSaving(true);
@@ -65,7 +67,7 @@ export default function PortfolioEditor() {
   const handleUpload = async (file: File | undefined, category: "profile_image" | "resume") => {
     if (!file) return;
     setUploading(category);
-    try { const result = await uploadFile.mutateAsync({ originalName: file.name, mimeType: file.type, dataBase64: await fileToBase64(file), category }); await saveProfile.mutateAsync(category === "profile_image" ? { profileImageFileId: result.id } : { resumeFileId: result.id }); await utils.portfolio.mine.invalidate(); toast.success(category === "profile_image" ? "Profile photo uploaded" : "Resume uploaded"); } catch (error) { toast.error(error instanceof Error ? error.message : "Upload failed"); } finally { setUploading(null); }
+    try { const result = await uploadFile.mutateAsync({ originalName: file.name, mimeType: file.type, dataBase64: await fileToBase64(file), category }); await saveProfile.mutateAsync(category === "profile_image" ? { profileImageFileId: result.id } : { resumeFileId: result.id }); if (category === "profile_image") setProfileImageUrl(result.url); await utils.portfolio.mine.invalidate(); toast.success(category === "profile_image" ? "Profile photo uploaded" : "Resume uploaded"); } catch (error) { toast.error(error instanceof Error ? error.message : "Upload failed"); } finally { setUploading(null); }
   };
   const resetProject = () => { setProject(emptyProject); setEditingProjectId(null); };
   const saveProject = async () => { if (!project.title.trim()) return toast.error("Give this project a title first"); const payload = { title: project.title, description: project.description, technologies: project.technologies.split(",").map(item => item.trim()).filter(Boolean), liveUrl: project.liveUrl, githubUrl: project.githubUrl }; try { if (editingProjectId) await updateProject.mutateAsync({ id: editingProjectId, data: payload }); else await createProject.mutateAsync(payload); await utils.projects.list.invalidate(); await utils.portfolio.mine.invalidate(); resetProject(); toast.success(editingProjectId ? "Project updated" : "Project added"); } catch (error) { toast.error(error instanceof Error ? error.message : "Could not save project"); } };
