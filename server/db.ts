@@ -1,8 +1,10 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser,
   files,
+  inquiries,
+  notifications,
   portfolios,
   projectMedia,
   projects,
@@ -180,6 +182,25 @@ export async function getPublicPortfolioBundle(slug: string) {
     }
   }
   return { portfolio, projects: await attachProjectMedia(projectRows, portfolio.userId), owner, profileImageUrl };
+}
+
+export async function getInquiriesByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(inquiries).where(eq(inquiries.freelancerUserId, userId)).orderBy(desc(inquiries.createdAt));
+}
+
+export async function getNotificationsByUserId(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(notifications).where(eq(notifications.userId, userId)).orderBy(desc(notifications.createdAt)).limit(20);
+}
+
+export async function getUnreadNotificationCount(userId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const rows = await db.select({ id: notifications.id }).from(notifications).where(and(eq(notifications.userId, userId), isNull(notifications.readAt)));
+  return rows.length;
 }
 
 export async function getActiveTemplates() {

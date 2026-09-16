@@ -9,12 +9,14 @@ import PortfolioEditor from "./pages/PortfolioEditor";
 import ReferralPage from "./pages/ReferralPage";
 import JoinPage from "./pages/JoinPage";
 import PublicPortfolio from "./pages/PublicPortfolio";
-import AdminPage from "./pages/AdminPage";
+import AdminPage from "@/pages/AdminPage";
+import InboxPage from "@/pages/InboxPage";
 
 function Router() {
   return <Switch>
     <Route path="/" component={Home} />
     <Route path="/editor" component={PortfolioEditor} />
+    <Route path="/inbox" component={InboxPage} />
     <Route path="/refer" component={ReferralPage} />
     <Route path="/join/:code" component={JoinPage} />
     <Route path="/p/:slug" component={PublicPortfolio} />

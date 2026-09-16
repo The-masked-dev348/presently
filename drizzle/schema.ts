@@ -123,6 +123,41 @@ export const files = mysqlTable(
   (table) => ({ userIdx: index("files_user_idx").on(table.userId) }),
 );
 
+export const inquiries = mysqlTable(
+  "inquiries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    portfolioId: int("portfolioId").notNull(),
+    freelancerUserId: int("freelancerUserId").notNull(),
+    senderName: varchar("senderName", { length: 160 }).notNull(),
+    senderEmail: varchar("senderEmail", { length: 320 }).notNull(),
+    senderWhatsapp: varchar("senderWhatsapp", { length: 40 }),
+    service: varchar("service", { length: 180 }),
+    budget: varchar("budget", { length: 80 }),
+    timeline: varchar("timeline", { length: 80 }),
+    message: text("message").notNull(),
+    source: varchar("source", { length: 120 }),
+    status: mysqlEnum("status", ["new", "contacted", "won", "archived"]).default("new").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({ freelancerIdx: index("inquiries_freelancer_idx").on(table.freelancerUserId), statusIdx: index("inquiries_status_idx").on(table.status) }),
+);
+
+export const notifications = mysqlTable(
+  "notifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    inquiryId: int("inquiryId"),
+    title: varchar("title", { length: 180 }).notNull(),
+    body: text("body").notNull(),
+    readAt: timestamp("readAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  (table) => ({ userIdx: index("notifications_user_idx").on(table.userId), unreadIdx: index("notifications_unread_idx").on(table.userId, table.readAt) }),
+);
+
 export const referrals = mysqlTable(
   "referrals",
   {

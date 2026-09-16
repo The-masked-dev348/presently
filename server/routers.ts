@@ -13,10 +13,12 @@ import {
   isOwnedFileId,
   slugify,
 } from "@shared/presently";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import {
   files,
+  inquiries,
+  notifications,
   portfolios,
   projectMedia,
   projects,
@@ -32,8 +34,12 @@ import {
   getDb,
   getFileOwnerId,
   getFilesByUserId,
+  getInquiriesByUserId,
+  getNotificationsByUserId,
+  getUnreadNotificationCount,
   getPortfolioBundleByUserId,
   getPortfolioByUserId,
+  getPortfolioBySlug,
   getPublicPortfolioBundle,
   getReferralForUser,
   getUserById,
@@ -42,6 +48,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
+import { notifyOwner } from "./_core/notification";
 
 const socialLinksSchema = z.object({
   website: z.string().max(500).optional(),
@@ -288,6 +295,73 @@ export const appRouter = router({
         await tx.delete(projectMedia).where(eq(projectMedia.id, input.id));
         await tx.delete(files).where(and(eq(files.id, row.fileId), eq(files.userId, ctx.user.id)));
       });
+      return { success: true } as const;
+    }),
+  }),
+
+  inquiries: router({
+    submit: publicProcedure.input(z.object({
+      portfolioSlug: z.string().min(1).max(80),
+      senderName: z.string().trim().min(2).max(160),
+      senderEmail: z.string().trim().email().max(320),
+      senderWhatsapp: z.string().trim().max(40).optional(),
+      service: z.string().trim().max(180).optional(),
+      budget: z.string().trim().max(80).optional(),
+      timeline: z.string().trim().max(80).optional(),
+      message: z.string().trim().min(10).max(4000),
+      website: z.string().max(200).optional(),
+    })).mutation(async ({ input }) => {
+      if (input.website) return { success: true } as const;
+      const portfolio = await getPortfolioBySlug(input.portfolioSlug);
+      if (!portfolio) throw new TRPCError({ code: "NOT_FOUND", message: "This portfolio is not accepting inquiries." });
+      const db = await requireDb();
+      const [insertedInquiry] = await db.transaction(async tx => {
+        const [inquiry] = await tx.insert(inquiries).values({
+          portfolioId: portfolio.id,
+          freelancerUserId: portfolio.userId,
+          senderName: input.senderName,
+          senderEmail: input.senderEmail,
+          senderWhatsapp: input.senderWhatsapp || null,
+          service: input.service || null,
+          budget: input.budget || null,
+          timeline: input.timeline || null,
+          message: input.message,
+          source: input.portfolioSlug,
+          status: "new",
+        }).$returningId();
+        if (!inquiry?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Your inquiry could not be saved." });
+        await tx.insert(notifications).values({
+          userId: portfolio.userId,
+          inquiryId: inquiry.id,
+          title: `New inquiry from ${input.senderName}`,
+          body: `${input.service || "A prospective client"} — ${input.message.slice(0, 180)}`,
+        });
+        return [inquiry] as const;
+      });
+      void notifyOwner({ title: `New Presently inquiry from ${input.senderName}`, content: `${input.senderEmail} contacted portfolio ${input.portfolioSlug}. ${input.message.slice(0, 500)}` }).catch(() => undefined);
+      return { success: true, inquiryId: insertedInquiry.id } as const;
+    }),
+    mine: protectedProcedure.query(({ ctx }) => getInquiriesByUserId(ctx.user.id)),
+    updateStatus: protectedProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["new", "contacted", "won", "archived"]) })).mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const owned = await db.select({ id: inquiries.id }).from(inquiries).where(and(eq(inquiries.id, input.id), eq(inquiries.freelancerUserId, ctx.user.id))).limit(1);
+      if (!owned[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Inquiry not found." });
+      await db.update(inquiries).set({ status: input.status }).where(eq(inquiries.id, input.id));
+      return { success: true } as const;
+    }),
+  }),
+
+  notifications: router({
+    mine: protectedProcedure.query(({ ctx }) => getNotificationsByUserId(ctx.user.id)),
+    unreadCount: protectedProcedure.query(({ ctx }) => getUnreadNotificationCount(ctx.user.id)),
+    markRead: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      await db.update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.id, input.id), eq(notifications.userId, ctx.user.id)));
+      return { success: true } as const;
+    }),
+    markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+      const db = await requireDb();
+      await db.update(notifications).set({ readAt: new Date() }).where(and(eq(notifications.userId, ctx.user.id), isNull(notifications.readAt)));
       return { success: true } as const;
     }),
   }),
