@@ -1,7 +1,7 @@
 import { startLogin } from "@/const";
 import { Button } from "@/components/ui/button";
 import { ArrowRight, FileUp, Gift, LogIn, PenLine, Sparkles } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 
 const choices = [
@@ -12,8 +12,10 @@ const choices = [
 
 export default function Home() {
   const { user, loading } = useAuth();
+  const [, setLocation] = useLocation();
   const choose = (choice: string) => {
     if (choice === "refer") return;
+    if (choice === "scratch" && user) return setLocation("/editor");
     localStorage.setItem("presently-intent", choice);
     startLogin();
   };
