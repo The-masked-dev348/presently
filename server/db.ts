@@ -6,7 +6,10 @@ import {
   inquiries,
   notifications,
   portfolios,
+  projectEvidence,
   projectMedia,
+  projectMetrics,
+  projectTestimonials,
   projects,
   referrals,
   rewards,
@@ -104,10 +107,26 @@ type ProjectMediaBundleItem = {
   originalName: string;
 };
 
+type ProjectMetricBundleItem = typeof projectMetrics.$inferSelect;
+type ProjectTestimonialBundleItem = typeof projectTestimonials.$inferSelect;
+type ProjectEvidenceBundleItem = {
+  id: number;
+  projectId: number;
+  evidenceType: "link" | "uploaded_file" | "image" | "artifact";
+  fileId: number | null;
+  externalUrl: string | null;
+  caption: string | null;
+  sortOrder: number;
+  url: string | null;
+  mimeType: string | null;
+  originalName: string | null;
+};
+
 async function attachProjectMedia(projectRows: Awaited<ReturnType<typeof getProjectsByPortfolioId>>, userId: number) {
-  if (!projectRows.length) return projectRows.map(project => ({ ...project, media: [] as ProjectMediaBundleItem[] }));
+  if (!projectRows.length) return projectRows.map(project => ({ ...project, media: [] as ProjectMediaBundleItem[], metrics: [] as ProjectMetricBundleItem[], testimonials: [] as ProjectTestimonialBundleItem[], evidence: [] as ProjectEvidenceBundleItem[] }));
   const db = await getDb();
-  if (!db) return projectRows.map(project => ({ ...project, media: [] as ProjectMediaBundleItem[] }));
+  if (!db) return projectRows.map(project => ({ ...project, media: [] as ProjectMediaBundleItem[], metrics: [] as ProjectMetricBundleItem[], testimonials: [] as ProjectTestimonialBundleItem[], evidence: [] as ProjectEvidenceBundleItem[] }));
+  const projectIds = projectRows.map(project => project.id);
   const mediaRows = await db
     .select({
       id: projectMedia.id,
@@ -121,15 +140,36 @@ async function attachProjectMedia(projectRows: Awaited<ReturnType<typeof getProj
     })
     .from(projectMedia)
     .innerJoin(files, eq(projectMedia.fileId, files.id))
-    .where(and(inArray(projectMedia.projectId, projectRows.map(project => project.id)), eq(projectMedia.userId, userId)))
+    .where(and(inArray(projectMedia.projectId, projectIds), eq(projectMedia.userId, userId)))
     .orderBy(asc(projectMedia.sortOrder), asc(projectMedia.createdAt));
+  const [metricRows, testimonialRows, evidenceRows] = await Promise.all([
+    db.select().from(projectMetrics).where(inArray(projectMetrics.projectId, projectIds)).orderBy(asc(projectMetrics.sortOrder), asc(projectMetrics.createdAt)),
+    db.select().from(projectTestimonials).where(and(inArray(projectTestimonials.projectId, projectIds), eq(projectTestimonials.visibility, "public"))).orderBy(asc(projectTestimonials.sortOrder), asc(projectTestimonials.createdAt)),
+    db.select().from(projectEvidence).where(inArray(projectEvidence.projectId, projectIds)).orderBy(asc(projectEvidence.sortOrder), asc(projectEvidence.createdAt)),
+  ]);
+  const evidenceFileIds = evidenceRows.map(item => item.fileId).filter((id): id is number => id !== null);
+  const evidenceFiles = evidenceFileIds.length
+    ? await db.select().from(files).where(and(inArray(files.id, evidenceFileIds), eq(files.userId, userId)))
+    : [];
+  const evidenceFileById = new Map(evidenceFiles.map(file => [file.id, file]));
   const byProject = new Map<number, ProjectMediaBundleItem[]>();
   for (const media of mediaRows) {
     const current = byProject.get(media.projectId) ?? [];
     current.push(media);
     byProject.set(media.projectId, current);
   }
-  return projectRows.map(project => ({ ...project, media: byProject.get(project.id) ?? [] }));
+  const metricsByProject = new Map<number, ProjectMetricBundleItem[]>();
+  for (const metric of metricRows) metricsByProject.set(metric.projectId, [...(metricsByProject.get(metric.projectId) ?? []), metric]);
+  const testimonialsByProject = new Map<number, ProjectTestimonialBundleItem[]>();
+  for (const testimonial of testimonialRows) testimonialsByProject.set(testimonial.projectId, [...(testimonialsByProject.get(testimonial.projectId) ?? []), testimonial]);
+  const evidenceByProject = new Map<number, ProjectEvidenceBundleItem[]>();
+  for (const evidence of evidenceRows) {
+    const file = evidence.fileId ? evidenceFileById.get(evidence.fileId) : undefined;
+    const current = evidenceByProject.get(evidence.projectId) ?? [];
+    current.push({ id: evidence.id, projectId: evidence.projectId, evidenceType: evidence.evidenceType, fileId: evidence.fileId, externalUrl: evidence.externalUrl, caption: evidence.caption, sortOrder: evidence.sortOrder, url: file?.fileUrl ?? null, mimeType: file?.mimeType ?? null, originalName: file?.originalName ?? null });
+    evidenceByProject.set(evidence.projectId, current);
+  }
+  return projectRows.map(project => ({ ...project, media: byProject.get(project.id) ?? [], metrics: metricsByProject.get(project.id) ?? [], testimonials: testimonialsByProject.get(project.id) ?? [], evidence: evidenceByProject.get(project.id) ?? [] }));
 }
 
 export async function getFilesByUserId(userId: number) {

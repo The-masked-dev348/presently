@@ -91,6 +91,57 @@ export const projects = mysqlTable(
   (table) => ({ portfolioIdx: index("projects_portfolio_idx").on(table.portfolioId) }),
 );
 
+export const projectMetrics = mysqlTable(
+  "projectMetrics",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    projectId: int("projectId").notNull(),
+    label: varchar("label", { length: 160 }).notNull(),
+    beforeValue: varchar("beforeValue", { length: 120 }),
+    afterValue: varchar("afterValue", { length: 120 }),
+    unit: varchar("unit", { length: 40 }),
+    displayedChange: varchar("displayedChange", { length: 180 }),
+    timeframe: varchar("timeframe", { length: 120 }),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({ projectIdx: index("project_metrics_project_idx").on(table.projectId) }),
+);
+
+export const projectTestimonials = mysqlTable(
+  "projectTestimonials",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    projectId: int("projectId").notNull(),
+    quote: text("quote").notNull(),
+    clientName: varchar("clientName", { length: 160 }),
+    clientRoleCompany: varchar("clientRoleCompany", { length: 180 }),
+    visibility: mysqlEnum("visibility", ["public", "private"]).default("public").notNull(),
+    attribution: mysqlEnum("attribution", ["named", "anonymous"]).default("named").notNull(),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({ projectIdx: index("project_testimonials_project_idx").on(table.projectId) }),
+);
+
+export const projectEvidence = mysqlTable(
+  "projectEvidence",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    projectId: int("projectId").notNull(),
+    evidenceType: mysqlEnum("evidenceType", ["link", "uploaded_file", "image", "artifact"]).notNull(),
+    fileId: int("fileId"),
+    externalUrl: varchar("externalUrl", { length: 600 }),
+    caption: varchar("caption", { length: 240 }),
+    sortOrder: int("sortOrder").default(0).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  },
+  (table) => ({ projectIdx: index("project_evidence_project_idx").on(table.projectId), fileIdx: index("project_evidence_file_idx").on(table.fileId) }),
+);
+
 export const projectMedia = mysqlTable(
   "projectMedia",
   {
@@ -216,6 +267,9 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Portfolio = typeof portfolios.$inferSelect;
 export type Project = typeof projects.$inferSelect;
+export type ProjectMetric = typeof projectMetrics.$inferSelect;
+export type ProjectTestimonial = typeof projectTestimonials.$inferSelect;
+export type ProjectEvidence = typeof projectEvidence.$inferSelect;
 export type PresentlyFile = typeof files.$inferSelect;
 export type Referral = typeof referrals.$inferSelect;
 export type Reward = typeof rewards.$inferSelect;

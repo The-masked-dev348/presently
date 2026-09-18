@@ -13,6 +13,37 @@ export type PreviewProject = {
   githubUrl?: string | null;
   imageUrl?: string | null;
   media?: PreviewMedia[];
+  metrics?: PreviewMetric[];
+  testimonials?: PreviewTestimonial[];
+  evidence?: PreviewEvidence[];
+};
+
+export type PreviewMetric = {
+  id?: number;
+  label: string;
+  beforeValue?: string | null;
+  afterValue?: string | null;
+  unit?: string | null;
+  displayedChange?: string | null;
+  timeframe?: string | null;
+};
+
+export type PreviewTestimonial = {
+  id?: number;
+  quote: string;
+  clientName?: string | null;
+  clientRoleCompany?: string | null;
+  attribution?: "named" | "anonymous" | null;
+};
+
+export type PreviewEvidence = {
+  id?: number;
+  evidenceType: "link" | "uploaded_file" | "image" | "artifact";
+  fileId?: number | null;
+  externalUrl?: string | null;
+  caption?: string | null;
+  url?: string | null;
+  originalName?: string | null;
 };
 
 export type PreviewMedia = {
@@ -52,6 +83,20 @@ function CaseStudy({ project, dark = false }: { project: PreviewProject; dark?: 
   const sections = [["Client problem", project.clientProblem], ["Solution", project.solution], ["Business impact", project.businessImpact]].filter(([, value]) => value);
   if (!sections.length) return null;
   return <div className="mt-4 grid gap-2 sm:grid-cols-3">{sections.map(([label, value]) => <div key={label} className={`rounded-xl p-3 ${dark ? "bg-white/[.06]" : "bg-[#f4f1e8]"}`}><p className={`text-[10px] font-bold uppercase tracking-[.13em] ${dark ? "text-[#a7d66e]" : "text-[#e98d55]"}`}>{label}</p><p className={`mt-1 text-xs leading-5 ${dark ? "text-white/65" : "text-[#6f786f]"}`}>{value}</p></div>)}</div>;
+}
+
+function ProofDetails({ project, dark = false }: { project: PreviewProject; dark?: boolean }) {
+  const metrics = project.metrics ?? [];
+  const testimonials = project.testimonials ?? [];
+  const evidence = project.evidence ?? [];
+  if (!metrics.length && !testimonials.length && !evidence.length) return null;
+  const muted = dark ? "text-white/55" : "text-[#6f786f]";
+  const panel = dark ? "bg-white/[.06]" : "bg-[#f4f1e8]";
+  return <div className="mt-4 space-y-3">
+    {metrics.length > 0 && <div className="grid gap-2 sm:grid-cols-2">{metrics.map(metric => <div key={metric.id ?? `${metric.label}-${metric.afterValue}`} className={`rounded-xl p-3 ${panel}`}><div className="flex items-start justify-between gap-3"><p className={`text-[10px] font-bold uppercase tracking-[.13em] ${dark ? "text-[#a7d66e]" : "text-[#e98d55]"}`}>{metric.label}</p><span className={`rounded-full border px-2 py-0.5 text-[9px] font-semibold ${dark ? "border-white/15 text-white/45" : "border-[#dedcd2] text-[#6f786f]"}`}>User-provided</span></div><p className={`mt-2 text-lg font-semibold ${dark ? "text-white" : "text-[#21473a]"}`}>{metric.afterValue || "—"}{metric.unit ? <span className="ml-1 text-xs font-normal">{metric.unit}</span> : null}</p>{(metric.beforeValue || metric.displayedChange || metric.timeframe) && <p className={`mt-1 text-xs ${muted}`}>{metric.displayedChange || [metric.beforeValue ? `Before ${metric.beforeValue}` : "", metric.timeframe].filter(Boolean).join(" · ")}</p>}</div>)}</div>}
+    {testimonials.length > 0 && <div className={`rounded-xl p-4 ${panel}`}><p className={`text-[10px] font-bold uppercase tracking-[.13em] ${dark ? "text-[#a7d66e]" : "text-[#e98d55]"}`}>Client voice · user-provided</p><div className="mt-2 space-y-3">{testimonials.map(testimonial => <blockquote key={testimonial.id ?? testimonial.quote} className={`text-sm leading-6 ${dark ? "text-white/75" : "text-[#385046]"}`}>“{testimonial.quote}”<footer className={`mt-1 text-xs ${muted}`}>— {testimonial.attribution === "anonymous" ? "Anonymous client" : testimonial.clientName || "Client"}{testimonial.clientRoleCompany ? `, ${testimonial.clientRoleCompany}` : ""}</footer></blockquote>)}</div></div>}
+    {evidence.length > 0 && <div><p className={`mb-2 text-[10px] font-bold uppercase tracking-[.13em] ${dark ? "text-[#a7d66e]" : "text-[#e98d55]"}`}>Evidence · user-provided</p><div className="flex flex-wrap gap-2">{evidence.map(item => { const href = item.externalUrl || item.url; return href ? <a key={item.id ?? href} href={href} target="_blank" rel="noreferrer" className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition ${dark ? "border-white/15 text-white/70 hover:border-[#a7d66e] hover:text-[#a7d66e]" : "border-[#dedcd2] text-[#385046] hover:border-[#e98d55] hover:text-[#e98d55]"}`}><ArrowUpRight className="h-3 w-3" />{item.caption || item.originalName || item.evidenceType}</a> : null; })}</div></div>}
+  </div>;
 }
 
 function Identity({ portfolio, dark = false }: { portfolio: PreviewPortfolio; dark?: boolean }) {
@@ -100,7 +145,7 @@ export default function PortfolioPreview({ portfolio }: { portfolio: PreviewPort
     return <div className="overflow-hidden rounded-[24px] bg-[#f4f0e6] text-[#19231f] shadow-2xl"><div className="grid gap-8 bg-[#e98d55] p-8 md:grid-cols-[1.1fr_.9fr] md:p-10"><div><p className="mb-12 text-xs font-bold uppercase tracking-[.22em] text-[#21473a]/60">portfolio / 01</p><h2 className="display-font max-w-xl text-5xl font-bold leading-[.95] md:text-7xl">Make it<br /><span className="text-[#e4f18e]">matter.</span></h2></div><div className="flex flex-col justify-end"><Identity portfolio={portfolio} /><p className="mt-5 max-w-sm text-sm leading-6 text-[#21473a]/75">{portfolio.bio || "Your point of view, in a few considered lines."}</p><SocialLinks portfolio={portfolio} /></div></div><div className="grid gap-5 p-8 md:grid-cols-2 md:p-10"><div><p className="mb-4 text-xs font-bold uppercase tracking-[.18em] text-[#6f786f]">About the practice</p><div className="flex flex-wrap gap-2">{skills.map(skill => <span key={skill} className="rounded-full bg-[#21473a] px-3 py-1.5 text-xs font-semibold text-white">{skill}</span>)}</div></div><div><p className="mb-4 text-xs font-bold uppercase tracking-[.18em] text-[#6f786f]">Selected work</p><div className="space-y-4">{projects.length ? projects.slice(0, 3).map(project => <ProjectRow key={project.id ?? project.title} project={project} />) : <EmptyWork />}</div></div></div></div>;
   }
   if (template === "editorial") {
-    return <div className="overflow-hidden rounded-[24px] bg-[#eee8db] text-[#19231f] shadow-2xl"><div className="border-b border-[#19231f]/15 px-8 py-5 text-xs uppercase tracking-[.2em]">The work of {portfolio.fullName || "a thoughtful maker"}<span className="float-right">{portfolio.location || "Presently"}</span></div><div className="grid gap-10 p-8 md:grid-cols-[.85fr_1.15fr] md:p-12"><div><p className="serif-font text-6xl leading-[.9]">A good<br />portfolio<br /><em>stays with you.</em></p><div className="mt-10"><Identity portfolio={portfolio} /><p className="mt-5 text-sm leading-7 text-[#6f786f]">{portfolio.bio || "A considered introduction belongs here."}</p><SocialLinks portfolio={portfolio} /></div></div><div><p className="mb-6 text-xs font-bold uppercase tracking-[.2em] text-[#6f786f]">Selected work — {new Date().getFullYear()}</p><div className="space-y-0">{projects.length ? projects.map((project, index) => <div key={project.id ?? project.title} className="grid grid-cols-[2.4rem_1fr] border-t border-[#19231f]/15 py-5"><span className="text-xs text-[#6f786f]">0{index + 1}</span><div><h3 className="serif-font text-2xl">{project.title}</h3><p className="mt-2 text-sm leading-6 text-[#6f786f]">{project.description || "A short description of the work."}</p><CaseStudy project={project} /><ProjectMedia media={project.media} /></div></div>) : <EmptyWork />}</div></div></div></div>;
+    return <div className="overflow-hidden rounded-[24px] bg-[#eee8db] text-[#19231f] shadow-2xl"><div className="border-b border-[#19231f]/15 px-8 py-5 text-xs uppercase tracking-[.2em]">The work of {portfolio.fullName || "a thoughtful maker"}<span className="float-right">{portfolio.location || "Presently"}</span></div><div className="grid gap-10 p-8 md:grid-cols-[.85fr_1.15fr] md:p-12"><div><p className="serif-font text-6xl leading-[.9]">A good<br />portfolio<br /><em>stays with you.</em></p><div className="mt-10"><Identity portfolio={portfolio} /><p className="mt-5 text-sm leading-7 text-[#6f786f]">{portfolio.bio || "A considered introduction belongs here."}</p><SocialLinks portfolio={portfolio} /></div></div><div><p className="mb-6 text-xs font-bold uppercase tracking-[.2em] text-[#6f786f]">Selected work — {new Date().getFullYear()}</p><div className="space-y-0">{projects.length ? projects.map((project, index) => <div key={project.id ?? project.title} className="grid grid-cols-[2.4rem_1fr] border-t border-[#19231f]/15 py-5"><span className="text-xs text-[#6f786f]">0{index + 1}</span><div><h3 className="serif-font text-2xl">{project.title}</h3><p className="mt-2 text-sm leading-6 text-[#6f786f]">{project.description || "A short description of the work."}</p><CaseStudy project={project} /><ProofDetails project={project} /><ProjectMedia media={project.media} /></div></div>) : <EmptyWork />}</div></div></div></div>;
   }
   if (template === "professional") {
     return <div className="overflow-hidden rounded-[24px] bg-white text-[#19231f] shadow-2xl"><div className="bg-[#21473a] px-8 py-8 text-white md:px-10"><div className="flex items-end justify-between gap-6"><div><p className="mb-6 text-xs font-semibold uppercase tracking-[.22em] text-[#d9e889]">Presently / profile</p><h2 className="display-font text-4xl font-bold md:text-5xl">{portfolio.fullName || "Your name"}</h2><p className="mt-2 text-white/65">{portfolio.professionalTitle || "Your professional title"}</p></div><div className="hidden sm:block"><Identity portfolio={portfolio} dark /></div></div></div><div className="grid gap-8 p-8 md:grid-cols-[.7fr_1.3fr] md:p-10"><div><p className="mb-3 text-xs font-bold uppercase tracking-[.18em] text-[#6f786f]">Profile</p><p className="text-sm leading-7 text-[#6f786f]">{portfolio.bio || "Your bio will appear here."}</p><div className="mt-7 flex flex-wrap gap-2">{skills.map(skill => <span key={skill} className="rounded-md bg-[#eef2e6] px-2.5 py-1 text-xs font-medium text-[#21473a]">{skill}</span>)}</div><SocialLinks portfolio={portfolio} /></div><div><p className="mb-3 text-xs font-bold uppercase tracking-[.18em] text-[#6f786f]">Projects</p><div className="grid gap-3 sm:grid-cols-2">{projects.length ? projects.slice(0, 4).map(project => <ProjectCard key={project.id ?? project.title} project={project} />) : <EmptyWork />}</div></div></div></div>;
@@ -109,7 +154,7 @@ export default function PortfolioPreview({ portfolio }: { portfolio: PreviewPort
 }
 
 function ProjectRow({ project, dark = false }: { project: PreviewProject; dark?: boolean }) {
-  return <div className={`group rounded-2xl border p-4 transition hover:-translate-y-0.5 ${dark ? "border-white/10 bg-white/[.04] hover:bg-white/[.08]" : "border-[#dedcd2] bg-white/50 hover:border-[#e98d55]"}`}><div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">{project.title}</h3><p className={`mt-1 text-sm leading-6 ${dark ? "text-white/55" : "text-[#6f786f]"}`}>{project.description || "A short description of the work."}</p><CaseStudy project={project} dark={dark} /><div className="mt-3 flex flex-wrap gap-1.5">{chips(project.technologies).slice(0, 4).map(tech => <span key={tech} className={`rounded-full px-2 py-1 text-[10px] ${dark ? "bg-white/10 text-white/60" : "bg-[#eeeade] text-[#6f786f]"}`}>{tech}</span>)}</div><ProjectMedia media={project.media} /></div><ArrowUpRight className={`h-4 w-4 shrink-0 ${dark ? "text-[#a7d66e]" : "text-[#e98d55]"}`} /></div></div>;
+  return <div className={`group rounded-2xl border p-4 transition hover:-translate-y-0.5 ${dark ? "border-white/10 bg-white/[.04] hover:bg-white/[.08]" : "border-[#dedcd2] bg-white/50 hover:border-[#e98d55]"}`}><div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">{project.title}</h3><p className={`mt-1 text-sm leading-6 ${dark ? "text-white/55" : "text-[#6f786f]"}`}>{project.description || "A short description of the work."}</p><CaseStudy project={project} dark={dark} /><ProofDetails project={project} dark={dark} /><div className="mt-3 flex flex-wrap gap-1.5">{chips(project.technologies).slice(0, 4).map(tech => <span key={tech} className={`rounded-full px-2 py-1 text-[10px] ${dark ? "bg-white/10 text-white/60" : "bg-[#eeeade] text-[#6f786f]"}`}>{tech}</span>)}</div><ProjectMedia media={project.media} /></div><ArrowUpRight className={`h-4 w-4 shrink-0 ${dark ? "text-[#a7d66e]" : "text-[#e98d55]"}`} /></div></div>;
 }
-function ProjectCard({ project }: { project: PreviewProject }) { return <div className="rounded-2xl border border-[#dedcd2] p-4"><ProjectMedia media={project.media} /><div className="mb-8 flex h-20 items-end rounded-xl bg-[#eeeade] p-3"><Sparkles className="h-4 w-4 text-[#e98d55]" /></div><h3 className="font-semibold">{project.title}</h3><p className="mt-1 line-clamp-2 text-sm leading-6 text-[#6f786f]">{project.description || "A short description of the work."}</p><CaseStudy project={project} /></div>; }
+function ProjectCard({ project }: { project: PreviewProject }) { return <div className="rounded-2xl border border-[#dedcd2] p-4"><ProjectMedia media={project.media} /><div className="mb-8 flex h-20 items-end rounded-xl bg-[#eeeade] p-3"><Sparkles className="h-4 w-4 text-[#e98d55]" /></div><h3 className="font-semibold">{project.title}</h3><p className="mt-1 line-clamp-2 text-sm leading-6 text-[#6f786f]">{project.description || "A short description of the work."}</p><CaseStudy project={project} /><ProofDetails project={project} /></div>; }
 function EmptyWork({ dark = false }: { dark?: boolean }) { return <div className={`rounded-2xl border border-dashed p-5 text-sm ${dark ? "border-white/15 text-white/45" : "border-[#dedcd2] text-[#6f786f]"}`}>Your selected work will appear here.</div>; }

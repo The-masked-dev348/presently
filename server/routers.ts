@@ -20,7 +20,10 @@ import {
   inquiries,
   notifications,
   portfolios,
+  projectEvidence,
   projectMedia,
+  projectMetrics,
+  projectTestimonials,
   projects,
   referrals,
   rewardAuditLogs,
@@ -80,6 +83,30 @@ const projectInput = z.object({
   githubUrl: z.string().url().max(500).or(z.literal("")).optional(),
   technologies: z.array(z.string().max(40)).max(20).optional(),
   sortOrder: z.number().int().min(0).max(999).optional(),
+  metrics: z.array(z.object({
+    label: z.string().trim().min(1).max(160),
+    beforeValue: z.string().max(120).optional(),
+    afterValue: z.string().max(120).optional(),
+    unit: z.string().max(40).optional(),
+    displayedChange: z.string().max(180).optional(),
+    timeframe: z.string().max(120).optional(),
+    sortOrder: z.number().int().min(0).max(999).optional(),
+  })).max(12).optional(),
+  testimonials: z.array(z.object({
+    quote: z.string().trim().min(10).max(3000),
+    clientName: z.string().max(160).optional(),
+    clientRoleCompany: z.string().max(180).optional(),
+    visibility: z.enum(["public", "private"]).default("public"),
+    attribution: z.enum(["named", "anonymous"]).default("named"),
+    sortOrder: z.number().int().min(0).max(999).optional(),
+  })).max(8).optional(),
+  evidence: z.array(z.object({
+    evidenceType: z.enum(["link", "uploaded_file", "image", "artifact"]),
+    fileId: z.number().int().positive().nullable().optional(),
+    externalUrl: z.string().url().max(600).or(z.literal("")).optional(),
+    caption: z.string().max(240).optional(),
+    sortOrder: z.number().int().min(0).max(999).optional(),
+  })).max(12).optional(),
 });
 
 async function requireDb() {
@@ -113,6 +140,22 @@ async function assertOwnedFile(fileId: number | null | undefined, userId: number
   const ownerId = await getFileOwnerId(fileId);
   if (!isOwnedFileId(fileId, ownerId, userId)) {
     throw new TRPCError({ code: "FORBIDDEN", message: FOREIGN_FILE_ERR_MSG });
+  }
+}
+
+async function syncProjectProof(db: Awaited<ReturnType<typeof getDb>>, projectId: number, input: z.infer<typeof projectInput>) {
+  if (!db) return;
+  await db.delete(projectMetrics).where(eq(projectMetrics.projectId, projectId));
+  await db.delete(projectTestimonials).where(eq(projectTestimonials.projectId, projectId));
+  await db.delete(projectEvidence).where(eq(projectEvidence.projectId, projectId));
+  if (input.metrics?.length) {
+    await db.insert(projectMetrics).values(input.metrics.map((metric, index) => ({ projectId, label: metric.label, beforeValue: metric.beforeValue ?? null, afterValue: metric.afterValue ?? null, unit: metric.unit ?? null, displayedChange: metric.displayedChange ?? null, timeframe: metric.timeframe ?? null, sortOrder: metric.sortOrder ?? index })));
+  }
+  if (input.testimonials?.length) {
+    await db.insert(projectTestimonials).values(input.testimonials.map((testimonial, index) => ({ projectId, quote: testimonial.quote, clientName: testimonial.clientName ?? null, clientRoleCompany: testimonial.clientRoleCompany ?? null, visibility: testimonial.visibility, attribution: testimonial.attribution, sortOrder: testimonial.sortOrder ?? index })));
+  }
+  if (input.evidence?.length) {
+    await db.insert(projectEvidence).values(input.evidence.map((item, index) => ({ projectId, evidenceType: item.evidenceType, fileId: item.fileId ?? null, externalUrl: item.externalUrl || null, caption: item.caption ?? null, sortOrder: item.sortOrder ?? index })));
   }
 }
 
@@ -216,6 +259,8 @@ export const appRouter = router({
     create: protectedProcedure.input(projectInput).mutation(async ({ ctx, input }) => {
       const db = await requireDb();
       const portfolio = await requireOwnedPortfolio(ctx.user.id);
+      await assertOwnedFile(input.imageFileId, ctx.user.id);
+      await Promise.all((input.evidence ?? []).map(item => assertOwnedFile(item.fileId, ctx.user.id)));
       const [insertedProject] = await db.insert(projects).values({
         portfolioId: portfolio.id,
         title: input.title,
@@ -230,6 +275,7 @@ export const appRouter = router({
         sortOrder: input.sortOrder ?? 0,
       }).$returningId();
       if (!insertedProject?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Project could not be identified after creation." });
+      await syncProjectProof(db, insertedProject.id, input);
       return { id: insertedProject.id };
     }),
     update: protectedProcedure.input(z.object({ id: z.number().int().positive(), data: projectInput })).mutation(async ({ ctx, input }) => {
@@ -237,6 +283,8 @@ export const appRouter = router({
       const portfolio = await requireOwnedPortfolio(ctx.user.id);
       const owned = await db.select().from(projects).where(and(eq(projects.id, input.id), eq(projects.portfolioId, portfolio.id))).limit(1);
       if (!owned[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Project not found." });
+      await assertOwnedFile(input.data.imageFileId, ctx.user.id);
+      await Promise.all((input.data.evidence ?? []).map(item => assertOwnedFile(item.fileId, ctx.user.id)));
       await db.update(projects).set({
         title: input.data.title,
         description: input.data.description ?? "",
@@ -249,6 +297,7 @@ export const appRouter = router({
         technologies: input.data.technologies?.filter(Boolean).join(",") ?? "",
         sortOrder: input.data.sortOrder ?? 0,
       }).where(eq(projects.id, input.id));
+      await syncProjectProof(db, input.id, input.data);
       return { success: true };
     }),
     delete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -303,6 +352,41 @@ export const appRouter = router({
       await db.transaction(async tx => {
         await tx.delete(projectMedia).where(eq(projectMedia.id, input.id));
         await tx.delete(files).where(and(eq(files.id, row.fileId), eq(files.userId, ctx.user.id)));
+      });
+      return { success: true } as const;
+    }),
+  }),
+
+  projectEvidence: router({
+    upload: protectedProcedure.input(z.object({
+      projectId: z.number().int().positive(),
+      originalName: z.string().min(1).max(255),
+      mimeType: z.string().refine(type => (ALLOWED_UPLOADS as readonly string[]).includes(type), "Use PDF, JPG, JPEG, or PNG evidence files."),
+      dataBase64: z.string().min(1),
+      evidenceType: z.enum(["uploaded_file", "image", "artifact"]).default("uploaded_file"),
+      caption: z.string().max(240).optional(),
+    })).mutation(async ({ ctx, input }) => {
+      const { db, portfolio } = await requireOwnedProject(ctx.user.id, input.projectId);
+      const raw = input.dataBase64.includes(",") ? input.dataBase64.split(",").pop() ?? "" : input.dataBase64;
+      const buffer = Buffer.from(raw, "base64");
+      if (!isAllowedUpload(input.mimeType, buffer.byteLength) || buffer.byteLength > MAX_UPLOAD_BYTES) {
+        throw new TRPCError({ code: "BAD_REQUEST", message: "Evidence files must be PDF, JPG, JPEG, or PNG and no larger than 10 MB." });
+      }
+      const stored = await storagePut(`${ctx.user.id}/presently/projects/${input.projectId}/evidence/${input.originalName}`, buffer, input.mimeType);
+      const [insertedFile] = await db.insert(files).values({ userId: ctx.user.id, portfolioId: portfolio.id, originalName: input.originalName, storageKey: stored.key, fileUrl: stored.url, mimeType: input.mimeType, fileSize: buffer.byteLength, category: "other" }).$returningId();
+      if (!insertedFile?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Evidence was stored but its file record could not be identified." });
+      const [insertedEvidence] = await db.insert(projectEvidence).values({ projectId: input.projectId, evidenceType: input.evidenceType, fileId: insertedFile.id, caption: input.caption ?? null, sortOrder: 0 }).$returningId();
+      if (!insertedEvidence?.id) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Evidence was stored but its project link could not be identified." });
+      return { id: insertedEvidence.id, fileId: insertedFile.id, evidenceType: input.evidenceType, url: stored.url, originalName: input.originalName, caption: input.caption ?? null };
+    }),
+    delete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      const db = await requireDb();
+      const portfolio = await requireOwnedPortfolio(ctx.user.id);
+      const row = (await db.select({ evidence: projectEvidence, project: projects }).from(projectEvidence).innerJoin(projects, eq(projectEvidence.projectId, projects.id)).where(and(eq(projectEvidence.id, input.id), eq(projects.portfolioId, portfolio.id))).limit(1))[0];
+      if (!row) throw new TRPCError({ code: "NOT_FOUND", message: "Project evidence not found." });
+      await db.transaction(async tx => {
+        await tx.delete(projectEvidence).where(eq(projectEvidence.id, input.id));
+        if (row.evidence.fileId) await tx.delete(files).where(and(eq(files.id, row.evidence.fileId), eq(files.userId, ctx.user.id)));
       });
       return { success: true } as const;
     }),
