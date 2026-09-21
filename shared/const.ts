@@ -11,9 +11,10 @@ export const FOREIGN_FILE_ERR_MSG = 'That file does not belong to your account (
 // victim's browser.
 export const OAUTH_STATE_COOKIE = "__Host-oauth_state";
 
-// `state` carries the callback redirect URI (used at token exchange) plus the
-// CSRF nonce. Defined here so the client encoder and server decoder never drift.
-export type OAuthState = { redirectUri: string; nonce?: string };
+// `state` carries the callback redirect URI (used at token exchange), the
+// intended in-app return path, and the CSRF nonce. Defined here so the client
+// encoder and server decoder never drift.
+export type OAuthState = { redirectUri: string; returnTo?: string; nonce?: string };
 
 export const encodeOAuthState = (state: OAuthState): string =>
   btoa(JSON.stringify(state));

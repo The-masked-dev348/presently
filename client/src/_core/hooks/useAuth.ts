@@ -76,11 +76,12 @@ export function useAuth(options?: UseAuthOptions) {
     if (typeof window === "undefined") return;
     if (redirectPath && window.location.pathname === redirectPath) return;
 
-    // Navigate at this moment only. startLogin() mints the nonce + cookie itself.
+    // Navigate at this moment only. Preserve the protected route so OAuth can
+    // return the user to the editor instead of dropping them at the homepage.
     if (redirectPath) {
       window.location.href = redirectPath;
     } else {
-      startLogin();
+      startLogin(`${window.location.pathname}${window.location.search}${window.location.hash}`);
     }
   }, [
     redirectOnUnauthenticated,

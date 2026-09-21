@@ -12,7 +12,7 @@ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 // call would desync it from an in-flight login and the callback would reject it
 // with "invalid oauth state". It returns void by design, so there is no URL to
 // stash across renders.
-export const startLogin = () => {
+export const startLogin = (returnTo?: string) => {
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
   const redirectUri = `${window.location.origin}/api/oauth/callback`;
@@ -21,7 +21,9 @@ export const startLogin = () => {
   const isSecure = window.location.protocol === "https:";
   const cookieAttributes = `Path=/; Max-Age=600; SameSite=Lax${isSecure ? "; Secure" : ""}`;
   document.cookie = `${OAUTH_STATE_COOKIE}=${nonce}; ${cookieAttributes}`;
-  const state = encodeOAuthState({ redirectUri, nonce });
+  const requestedReturnTo = returnTo || `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  const safeReturnTo = requestedReturnTo.startsWith("/") && !requestedReturnTo.startsWith("//") ? requestedReturnTo : "/";
+  const state = encodeOAuthState({ redirectUri, returnTo: safeReturnTo, nonce });
 
   const url = new URL(`${oauthPortalUrl}/app-auth`);
   url.searchParams.set("appId", appId);

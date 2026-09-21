@@ -11,7 +11,8 @@ function getQueryParam(req: Request, key: string): string | undefined {
 }
 
 function safeRedirectTarget(req: Request, state: string): string {
-  const target = decodeOAuthState(state).redirectUri;
+  const decodedState = decodeOAuthState(state);
+  const target = decodedState.returnTo || decodedState.redirectUri;
   try {
     const requested = new URL(target || "/", `${req.protocol}://${req.get("host")}`);
     const current = `${req.protocol}://${req.get("host")}`;
